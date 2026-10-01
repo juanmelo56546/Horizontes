@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Horizontes</title><style>
+body{margin:0;background:#f5f7fa;font-family:Arial,sans-serif;color:#183044}header{background:#003e70;color:#fff;padding:18px;text-align:center;font-weight:bold}.wrap{width:min(1000px,94%);margin:25px auto}.card{background:#fff;border-radius:16px;padding:22px;box-shadow:0 8px 25px #0001}h1{color:#003e70;margin-top:0}.meta{color:#66798a;font-size:13px;margin-bottom:15px}iframe{width:100%;height:75vh;border:1px solid #d7e0e8;border-radius:10px}img.preview{max-width:100%;max-height:75vh;display:block;margin:auto}.btn{display:inline-block;padding:10px 15px;border-radius:9px;background:#003e70;color:#fff;text-decoration:none;margin:5px 5px 15px 0}
+</style></head><body><header>HORIZONTES · Universidad de Caldas</header><main class="wrap"><div class="card" id="app">Cargando...</div></main>
+<script>
+(async()=>{const id=location.pathname.split('/').pop();const r=await fetch('/api/view/'+encodeURIComponent(id));const x=await r.json();const app=document.getElementById('app');if(!r.ok){app.innerHTML='<h1>Archivo no encontrado</h1>';return}
+let content='';if(x.mime==='application/pdf'){content=`<iframe src="/api/raw/${x.id}"></iframe>`}else if(x.mime.startsWith('image/')){content=`<img class="preview" src="/api/raw/${x.id}" alt="">`}else{content=`<p>Este tipo de archivo no tiene vista previa integrada.</p>`}
+app.innerHTML=`<h1>${esc(x.name)}</h1><div class="meta">${esc(x.description||'')} · ${esc(x.originalName)}</div><a class="btn" href="${x.downloadUrl}">Descargar archivo</a>${content}`})();
+function esc(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+</script></body></html>

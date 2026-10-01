@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Horizontes | Universidad de Caldas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Condensed:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{--blue:#003e70;--deep:#00284d;--blue2:#045389;--gold:#d5bb87;--bg:#f5f7fa;--card:#fff;--text:#183044;--muted:#66798a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:Roboto,Arial,sans-serif;color:var(--text)}
+header{background:var(--blue);color:#fff;padding:18px 5vw;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.brand{display:flex;align-items:center;gap:14px}.sun{width:50px;height:50px;border:2px solid var(--gold);border-radius:50%;display:grid;place-items:center;color:var(--gold);font-size:25px}
+.brand strong{display:block;font-family:"Times New Roman",serif;font-size:21px}.brand span{font-size:12px;opacity:.85}
+.container{width:min(1120px,92%);margin:30px auto}.hero{display:grid;grid-template-columns:1.3fr .7fr;gap:22px;align-items:stretch}
+.card{background:var(--card);border-radius:18px;padding:26px;box-shadow:0 8px 30px #0b2b4012;border:1px solid #dfe7ee}
+h1{margin:0 0 8px;font-family:"Roboto Condensed";font-size:38px;color:var(--blue)}h2{margin:0 0 15px;color:var(--blue)}
+.subtitle{color:var(--muted);line-height:1.6}.drop{border:2px dashed #9eb4c6;border-radius:15px;padding:28px;text-align:center;background:#f8fbfd;cursor:pointer}.drop:hover{border-color:var(--blue2);background:#f3f8fb}
+input[type=file]{display:none}.btn{border:0;border-radius:10px;padding:11px 16px;font-weight:700;cursor:pointer}.primary{background:var(--blue);color:#fff}.gold{background:var(--gold);color:var(--deep)}.danger{background:#fbe7e7;color:#a42a2a}
+label{display:block;font-weight:700;margin:15px 0 7px}input[type=text],textarea{width:100%;border:1px solid #cbd7e1;border-radius:10px;padding:12px;font:inherit}textarea{min-height:80px;resize:vertical}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.toolbar{display:flex;justify-content:space-between;gap:15px;align-items:center;margin:30px 0 15px}.search{max-width:360px}
+.list{display:grid;gap:12px}.file{display:grid;grid-template-columns:1fr auto;gap:15px;align-items:center}.meta{font-size:13px;color:var(--muted);margin-top:5px}.file h3{margin:0;color:var(--blue)}.empty{text-align:center;color:var(--muted);padding:35px}
+.notice{margin-top:15px;background:#fff7e5;border-left:4px solid var(--gold);padding:12px 14px;border-radius:8px;font-size:13px;line-height:1.5}
+footer{text-align:center;color:var(--muted);font-size:12px;padding:35px}
+@media(max-width:760px){.hero{grid-template-columns:1fr}header{padding:15px 4%}.file{grid-template-columns:1fr}.toolbar{align-items:stretch;flex-direction:column}.search{max-width:none}}
+</style>
+</head>
+<body>
+<header><div class="brand"><div class="sun">☼</div><div><strong>Universidad de Caldas</strong><span>Repositorio digital académico</span></div></div><b>HORIZONTES</b></header>
+<main class="container">
+<section class="hero">
+<div class="card"><h1>Horizontes</h1><p class="subtitle">Un espacio para guardar, organizar y compartir documentos académicos mediante enlaces y códigos QR.</p>
+<div class="drop" id="drop" onclick="fileInput.click()">📄 <b id="fileText">Seleccionar archivo</b><br><small>PDF, Word, Excel, imágenes y otros archivos · máximo 100 MB</small><input id="fileInput" type="file"></div>
+<label>Nombre para mostrar</label><input id="name" type="text" placeholder="Ej. Diario de campo - Auyama">
+<label>Descripción</label><textarea id="description" placeholder="Descripción breve del documento..."></textarea>
+<div class="actions"><button class="btn primary" onclick="upload()">Guardar en Horizontes</button><button class="btn" onclick="clearForm()">Limpiar</button></div>
+<div id="status"></div></div>
+<div class="card"><h2>¿Cómo funciona?</h2><p>1. Sube un documento.</p><p>2. Queda almacenado en el servidor.</p><p>3. Se genera un enlace único.</p><p>4. Descarga o muestra el <b>QR</b>.</p><p>5. Al escanearlo, el documento se abre desde Horizontes.</p><div class="notice">Para que un QR pueda abrirse desde otro celular, Horizontes debe estar publicado en una dirección de internet. Al ejecutarlo en localhost, el sistema funciona en tu computador.</div></div>
+</section>
+<div class="toolbar"><h2>Documentos guardados</h2><input class="search" id="search" type="text" placeholder="🔎 Buscar..." oninput="loadFiles()"></div>
+<div id="list" class="list"></div>
+</main><footer>Horizontes · Universidad de Caldas · Uso académico</footer>
+<script>
+const fileInput=document.getElementById('fileInput'), fileText=document.getElementById('fileText');
+fileInput.addEventListener('change',()=>fileText.textContent=fileInput.files[0]?.name||'Seleccionar archivo');
+document.getElementById('drop').addEventListener('dragover',e=>{e.preventDefault()});
+document.getElementById('drop').addEventListener('drop',e=>{e.preventDefault();fileInput.files=e.dataTransfer.files;fileInput.dispatchEvent(new Event('change'))});
+function esc(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function fmt(n){if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';if(n<1073741824)return (n/1048576).toFixed(1)+' MB';return (n/1073741824).toFixed(1)+' GB'}
+async function loadFiles(){const q=document.getElementById('search').value;const r=await fetch('/api/files?q='+encodeURIComponent(q));const a=await r.json();const list=document.getElementById('list');if(!a.length){list.innerHTML='<div class="card empty">Todavía no hay documentos guardados.</div>';return}list.innerHTML=a.map(x=>`<div class="card file"><div><h3>${esc(x.name)}</h3><div>${esc(x.description)}</div><div class="meta">${esc(x.originalName)} · ${fmt(x.size)} · ${new Date(x.createdAt).toLocaleString('es-CO')}</div></div><div class="actions"><button class="btn gold" onclick="showQR('${x.id}','${esc(x.name).replace(/'/g,"&#39;")}')">QR</button><a class="btn primary" href="/archivo/${encodeURIComponent(x.id)}" target="_blank">Ver</a><a class="btn" href="/api/files/${encodeURIComponent(x.id)}/download">Descargar</a><button class="btn danger" onclick="removeFile('${x.id}')">Eliminar</button></div></div>`).join('')}
+async function upload(){const f=fileInput.files[0];if(!f){alert('Selecciona un archivo.');return}if(f.size>100*1024*1024){alert('El archivo supera 100 MB.');return}const fd=new FormData();fd.append('file',f);fd.append('name',document.getElementById('name').value);fd.append('description',document.getElementById('description').value);const status=document.getElementById('status');status.innerHTML='<p>⏳ Guardando...</p>';const r=await fetch('/api/upload',{method:'POST',body:fd});const d=await r.json();if(!r.ok){status.innerHTML='<p style="color:#a42a2a">'+esc(d.error)+'</p>';return}status.innerHTML='<p style="color:#166534">✓ Archivo guardado correctamente.</p>';clearForm(false);loadFiles()}
+function clearForm(clearStatus=true){fileInput.value='';fileText.textContent='Seleccionar archivo';document.getElementById('name').value='';document.getElementById('description').value='';if(clearStatus)document.getElementById('status').innerHTML=''}
+async function showQR(id,name){const r=await fetch('/api/files/'+encodeURIComponent(id)+'/qr');const blob=await r.blob();const url=URL.createObjectURL(blob);const w=window.open('','_blank','width=650,height=760');w.document.write(`<title>QR - Horizontes</title><body style="font-family:Arial;text-align:center;padding:35px"><h2 style="color:#003e70">HORIZONTES</h2><p>${name}</p><img style="width:520px;max-width:90%" src="${url}"><p>Escanea este código para abrir el documento.</p><button onclick="window.print()">Imprimir / guardar</button></body>`)}
+async function removeFile(id){if(!confirm('¿Eliminar este documento?'))return;await fetch('/api/files/'+encodeURIComponent(id),{method:'DELETE'});loadFiles()}
+loadFiles();
+</script>
+</body></html>

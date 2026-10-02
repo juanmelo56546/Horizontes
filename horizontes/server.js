@@ -1,133 +1,128 @@
 const express = require("express");
 const multer = require("multer");
-const fs = require("fs");
-const path = require("path");
 const crypto = require("crypto");
 const QRCode = require("qrcode");
+const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || "";
-const ROOT = __dirname;
-const DATA_DIR = path.join(ROOT, "data");
-const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
-const DB_FILE = path.join(DATA_DIR, "files.json");
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
+const BUCKET = process.env.SUPABASE_BUCKET || "horizontes";
 
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, "[]");
-
-function readDb() {
-  try { return JSON.parse(fs.readFileSync(DB_FILE, "utf8")); }
-  catch { return []; }
-}
-function writeDb(items) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(items, null, 2));
-}
-function cleanName(name) {
-  return name.replace(/[^\p{L}\p{N}._ -]/gu, "_").slice(0, 180);
-}
-function publicUrl(req, id) {
-  const base = BASE_URL || `${req.protocol}://${req.get("host")}`;
-  return `${base}/archivo/${encodeURIComponent(id)}`;
+if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
+  console.error("Faltan SUPABASE_URL y SUPABASE_SECRET_KEY.");
+  process.exit(1);
 }
 
-const storage = multer.diskStorage({
-  destination: (_, __, cb) => cb(null, UPLOAD_DIR),
-  filename: (_, file, cb) => {
-    const id = crypto.randomUUID();
-    cb(null, `${id}__${cleanName(file.originalname)}`);
-  }
+const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false }
 });
+
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 100 * 1024 * 1024 }
 });
 
 app.use(express.json());
-app.use(express.static(path.join(ROOT, "public")));
+app.use(express.static(__dirname + "/public"));
 
-app.get("/api/files", (req, res) => {
+function pageUrl(req, id) {
+  const base = BASE_URL || `${req.protocol}://${req.get("host")}`;
+  return `${base}/archivo/${encodeURIComponent(id)}`;
+}
+function publicFileUrl(path) {
+  return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path.split("/").map(encodeURIComponent).join("/")}`;
+}
+function safeName(name) {
+  return name.replace(/[^\p{L}\p{N}._ -]/gu, "_").slice(0, 180);
+}
+
+app.get("/api/files", async (req, res) => {
+  const { data, error } = await supabase.from("documentos").select("*").order("creado_en", {ascending:false});
+  if (error) return res.status(500).json({error:error.message});
   const q = String(req.query.q || "").toLowerCase().trim();
-  let items = readDb().sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
-  if (q) items = items.filter(x =>
-    x.name.toLowerCase().includes(q) ||
-    (x.description || "").toLowerCase().includes(q)
-  );
-  res.json(items.map(x => ({...x, url: publicUrl(req, x.id)})));
+  let items = data || [];
+  if (q) items = items.filter(x => x.nombre.toLowerCase().includes(q) || (x.descripcion||"").toLowerCase().includes(q) || x.nombre_original.toLowerCase().includes(q));
+  res.json(items.map(x => ({
+    id:x.id, name:x.nombre, description:x.descripcion||"", originalName:x.nombre_original,
+    mime:x.tipo_mime, size:x.tamano, createdAt:x.creado_en,
+    url:pageUrl(req,x.id), fileUrl:publicFileUrl(x.ruta_archivo)
+  })));
 });
 
-app.post("/api/upload", upload.single("file"), (req, res) => {
-  if (!req.file) return res.status(400).json({error: "No se recibió ningún archivo."});
-  const id = req.file.filename.split("__")[0];
-  const item = {
-    id,
-    name: req.body.name?.trim() || req.file.originalname,
-    description: req.body.description?.trim() || "",
-    originalName: req.file.originalname,
-    storedName: req.file.filename,
-    mime: req.file.mimetype,
-    size: req.file.size,
-    createdAt: new Date().toISOString()
-  };
-  const db = readDb();
-  db.push(item);
-  writeDb(db);
-  res.json({...item, url: publicUrl(req, id)});
-});
-
-app.get("/api/files/:id/qr", async (req, res) => {
-  const item = readDb().find(x => x.id === req.params.id);
-  if (!item) return res.status(404).send("Archivo no encontrado");
+app.post("/api/upload", upload.single("file"), async (req,res) => {
   try {
-    const png = await QRCode.toBuffer(publicUrl(req, item.id), {
-      width: 700, margin: 2, errorCorrectionLevel: "H"
+    if (!req.file) return res.status(400).json({error:"No se recibió ningún archivo."});
+    const id = crypto.randomUUID();
+    const storagePath = `${id}/${safeName(req.file.originalname)}`;
+
+    const up = await supabase.storage.from(BUCKET).upload(storagePath, req.file.buffer, {
+      contentType:req.file.mimetype || "application/octet-stream", upsert:false
     });
-    res.type("png").send(png);
-  } catch (e) {
-    res.status(500).send("No fue posible generar el QR");
-  }
+    if (up.error) return res.status(500).json({error:"No se pudo guardar el archivo: "+up.error.message});
+
+    const row = {
+      id,
+      nombre:req.body.name?.trim() || req.file.originalname,
+      descripcion:req.body.description?.trim() || "",
+      nombre_original:req.file.originalname,
+      ruta_archivo:storagePath,
+      tipo_mime:req.file.mimetype || "application/octet-stream",
+      tamano:req.file.size
+    };
+    const db = await supabase.from("documentos").insert(row);
+    if (db.error) {
+      await supabase.storage.from(BUCKET).remove([storagePath]);
+      return res.status(500).json({error:"No se pudo registrar el archivo: "+db.error.message});
+    }
+    res.json({id,name:row.nombre,description:row.descripcion,originalName:row.nombre_original,url:pageUrl(req,id),fileUrl:publicFileUrl(storagePath)});
+  } catch(e) { res.status(500).json({error:e.message}); }
 });
 
-app.get("/api/files/:id/download", (req, res) => {
-  const item = readDb().find(x => x.id === req.params.id);
-  if (!item) return res.status(404).send("Archivo no encontrado");
-  const full = path.join(UPLOAD_DIR, item.storedName);
-  if (!fs.existsSync(full)) return res.status(404).send("Archivo no encontrado en almacenamiento");
-  res.download(full, item.originalName);
+app.get("/api/files/:id/qr", async (req,res) => {
+  const {data,error}=await supabase.from("documentos").select("id").eq("id",req.params.id).single();
+  if(error||!data) return res.status(404).send("Archivo no encontrado");
+  const png=await QRCode.toBuffer(pageUrl(req,data.id),{width:700,margin:2,errorCorrectionLevel:"H"});
+  res.type("png").send(png);
 });
 
-app.delete("/api/files/:id", (req, res) => {
-  const db = readDb();
-  const idx = db.findIndex(x => x.id === req.params.id);
-  if (idx === -1) return res.status(404).json({error: "Archivo no encontrado"});
-  const [item] = db.splice(idx, 1);
-  const full = path.join(UPLOAD_DIR, item.storedName);
-  if (fs.existsSync(full)) fs.unlinkSync(full);
-  writeDb(db);
+app.get("/api/view/:id", async (req,res) => {
+  const {data,error}=await supabase.from("documentos").select("*").eq("id",req.params.id).single();
+  if(error||!data) return res.status(404).json({error:"Archivo no encontrado"});
+  res.json({id:data.id,name:data.nombre,description:data.descripcion||"",originalName:data.nombre_original,mime:data.tipo_mime,size:data.tamano,createdAt:data.creado_en,downloadUrl:`/api/files/${data.id}/download`,fileUrl:publicFileUrl(data.ruta_archivo),url:pageUrl(req,data.id)});
+});
+
+app.get("/api/files/:id/download", async (req,res) => {
+  const {data,error}=await supabase.from("documentos").select("*").eq("id",req.params.id).single();
+  if(error||!data) return res.status(404).send("Archivo no encontrado");
+  const result=await supabase.storage.from(BUCKET).download(data.ruta_archivo);
+  if(result.error) return res.status(404).send("Archivo no encontrado");
+  res.setHeader("Content-Type",data.tipo_mime||"application/octet-stream");
+  res.setHeader("Content-Disposition",`attachment; filename*=UTF-8''${encodeURIComponent(data.nombre_original)}`);
+  res.send(Buffer.from(await result.data.arrayBuffer()));
+});
+
+app.delete("/api/files/:id", async (req,res) => {
+  const {data,error}=await supabase.from("documentos").select("ruta_archivo").eq("id",req.params.id).single();
+  if(error||!data) return res.status(404).json({error:"Archivo no encontrado"});
+  const rm=await supabase.storage.from(BUCKET).remove([data.ruta_archivo]);
+  if(rm.error) return res.status(500).json({error:rm.error.message});
+  const del=await supabase.from("documentos").delete().eq("id",req.params.id);
+  if(del.error) return res.status(500).json({error:del.error.message});
   res.json({ok:true});
 });
 
-app.get("/archivo/:id", (req, res) => {
-  res.sendFile(path.join(ROOT, "public", "viewer.html"));
+app.get("/api/raw/:id", async (req,res) => {
+  const {data,error}=await supabase.from("documentos").select("*").eq("id",req.params.id).single();
+  if(error||!data) return res.status(404).send("Archivo no encontrado");
+  const result=await supabase.storage.from(BUCKET).download(data.ruta_archivo);
+  if(result.error) return res.status(404).send("Archivo no encontrado");
+  res.setHeader("Content-Type",data.tipo_mime||"application/octet-stream");
+  res.setHeader("Content-Disposition","inline");
+  res.send(Buffer.from(await result.data.arrayBuffer()));
 });
 
-app.get("/api/view/:id", (req, res) => {
-  const item = readDb().find(x => x.id === req.params.id);
-  if (!item) return res.status(404).json({error: "Archivo no encontrado"});
-  res.json({...item, downloadUrl: `/api/files/${item.id}/download`, url: publicUrl(req, item.id)});
-});
-
-app.get("/api/raw/:id", (req, res) => {
-  const item = readDb().find(x => x.id === req.params.id);
-  if (!item) return res.status(404).send("Archivo no encontrado");
-  const full = path.join(UPLOAD_DIR, item.storedName);
-  if (!fs.existsSync(full)) return res.status(404).send("Archivo no encontrado");
-  res.setHeader("Content-Type", item.mime || "application/octet-stream");
-  res.setHeader("Content-Disposition", "inline");
-  res.sendFile(full);
-});
-
-app.listen(PORT, () => {
-  console.log(`Horizontes funcionando en http://localhost:${PORT}`);
-  if (BASE_URL) console.log(`BASE_URL: ${BASE_URL}`);
-});
+app.get("/archivo/:id",(req,res)=>res.sendFile(__dirname+"/public/viewer.html"));
+app.listen(PORT,()=>console.log("Horizontes funcionando en puerto "+PORT));
